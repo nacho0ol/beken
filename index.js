@@ -1,11 +1,11 @@
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
-const db = require("./config/db"); // Pastikan DB di import biar kebaca pas start
+const db = require("./config/db");
+const path = require("path");
 
-// Import Routes
 const authRoutes = require("./routes/authRoutes");
-const productRoutes = require("./routes/productRoutes"); // 👈 1. TAMBAHAN BARU
+const productRoutes = require("./routes/productRoutes");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -14,14 +14,15 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
 app.use((req, res, next) => {
   console.log(`[REQUEST MASUK] ${req.method} ke alamat: ${req.url}`);
   next();
 });
 
-// --- DAFTAR ROUTES ---
 app.use("/api/auth", authRoutes);
-app.use("/api/products", productRoutes); // 👈 2. TAMBAHAN BARU
+app.use("/api/products", productRoutes); 
 
 app.get("/", (req, res) => {
   res.send("Server Scentra Jalan! 🚀");

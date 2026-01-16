@@ -28,9 +28,43 @@ const createProduct = async (req, res) => {
     base_notes,
     description,
     price,
-    img_path,
     current_stock,
   } = req.body;
+
+  if (
+    !product_name ||
+    !variant ||
+    !price ||
+    !top_notes ||
+    !middle_notes ||
+    !base_notes ||
+    !description
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: "Semua kolom (termasuk Notes & Deskripsi) wajib diisi!",
+    });
+  }
+
+  if (
+    current_stock === undefined ||
+    current_stock === "" ||
+    current_stock === null
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: "Stok awal wajib diisi (minimal 0)!",
+    });
+  }
+
+  if (isNaN(price) || isNaN(variant) || isNaN(current_stock)) {
+    return res.status(400).json({
+      success: false,
+      message: "Harga, Varian, dan Stok harus berupa angka!",
+    });
+  }
+
+  const img_path = req.file ? req.file.filename : "default.jpg";
 
   try {
     const query = `CALL sp_AddNewProduct(?, ?, ?, ?, ?, ?, ?, ?, ?)`;
@@ -43,8 +77,8 @@ const createProduct = async (req, res) => {
       base_notes,
       description,
       price,
-      img_path || "default.jpg",
-      current_stock || 0,
+      img_path,
+      current_stock,
     ];
 
     await db.query(query, values);
@@ -73,9 +107,13 @@ const updateProduct = async (req, res) => {
     base_notes,
     description,
     price,
-    img_path,
     current_stock,
+    img_path: old_img_path,
   } = req.body;
+
+  const final_img_path = req.file
+    ? req.file.filename
+    : old_img_path || "default.jpg";
 
   try {
     const query = `
@@ -84,15 +122,15 @@ const updateProduct = async (req, res) => {
             WHERE product_id=? 
         `;
     const values = [
-      product_name || null,
-      variant || null,
-      top_notes || null,
-      middle_notes || null,
-      base_notes || null,
-      description || null,
-      price || 0,
-      img_path || "default.jpg",
-      current_stock !== undefined ? current_stock : 0, // Stok aman
+      product_name,
+      variant,
+      top_notes,
+      middle_notes,
+      base_notes,
+      description,
+      price,
+      final_img_path,
+      current_stock,
       id,
     ];
 
@@ -104,16 +142,10 @@ const updateProduct = async (req, res) => {
         .json({ success: false, message: "Produk tidak ditemukan" });
     }
 
-    res
-      .status(200)
-      .json({ success: true, message: "Produk Berhasil Diupdate" });
+    res.status(200).json({ success: true, message: "Update Berhasil!" });
   } catch (error) {
-    console.error("❌ ERROR UPDATE:", error);
-    res.status(500).json({
-      success: false,
-      message: "Gagal Update Produk",
-      error: error.message,
-    });
+    console.error(error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 

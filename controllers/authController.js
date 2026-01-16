@@ -35,9 +35,20 @@ const login = async (req, res) => {
   const { username, password } = req.body;
 
   try {
-    const [rows] = await db.execute("SELECT * FROM Users WHERE Username = ?", [
-      username,
-    ]);
+    if (!username || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "Username dan Password wajib diisi!",
+      });
+    }
+
+    const query = `
+        SELECT user_id, Firstname, Lastname, Username, password, role 
+        FROM Users 
+        WHERE Username = ?
+    `;
+
+    const [rows] = await db.execute(query, [username]);
 
     if (rows.length === 0) {
       return res
@@ -68,11 +79,11 @@ const login = async (req, res) => {
       message: "Login Berhasil!",
       data: {
         user_id: user.user_id,
-        username: user.Username,
+        username: user.Username || user.username,
         role: user.role,
 
-        firstname: user.Firstname,
-        lastname: user.Lastname,
+        firstname: user.firstname || user.Firstname,
+        lastname: user.lastname || user.Lastname,
       },
     });
   } catch (error) {
@@ -110,28 +121,56 @@ const getAllUsers = async (req, res) => {
 const getUserById = async (req, res) => {
   const { id } = req.params;
   try {
-    const [rows] = await db.execute(
-      "SELECT user_id, firstname, lastname, Username, role FROM Users WHERE user_id = ?",
-      [id]
-    );
+    const query = `
+        SELECT 
+            user_id AS user_id, 
+            Firstname AS firstname, 
+            Lastname AS lastname, 
+            Username AS username, 
+            role, 
+            password 
+        FROM Users 
+        WHERE user_id = ?
+    `;
+
+    const [rows] = await db.execute(query, [id]);
 
     if (rows.length === 0)
       return res
         .status(404)
         .json({ success: false, message: "User tidak ditemukan" });
 
+    const user = rows[0];
+
+    let passwordDecrypted = user.password; // Default: password mentah (kalo gagal dekrip)
+
+    try {
+      const hasilDekrip = decryptPassword(user.password);
+
+      if (hasilDekrip && hasilDekrip.length > 0) {
+        passwordDecrypted = hasilDekrip;
+      }
+    } catch (e) {
+      console.log(
+        "⚠️ Gagal dekripsi password (mungkin data lama/manual insert). Kirim raw."
+      );
+    }
+
     res.status(200).json({
       success: true,
       message: "Detail User",
       data: {
-        user_id: rows[0].user_id,
-        username: rows[0].Username,
-        role: rows[0].role,
-        firstname: rows[0].firstname,
-        lastname: rows[0].lastname,
+        user_id: user.user_id,
+        username: user.username,
+        role: user.role,
+        firstname: user.firstname,
+        lastname: user.lastname,
+
+        password: passwordDecrypted,
       },
     });
   } catch (error) {
+    console.error("Error Detail User:", error);
     res
       .status(500)
       .json({ success: false, message: "Error Server", error: error.message });
@@ -174,6 +213,6 @@ module.exports = {
   login,
   getAllUsers,
   getUserById,
-  updateUser, 
-  deleteUser, 
+  updateUser,
+  deleteUser,
 };
