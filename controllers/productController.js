@@ -5,11 +5,10 @@ const path = require("path");
 const handleSqlError = (error, res, req, actionType = "Action") => {
   console.error(`❌ ERROR ${actionType}:`, error);
 
-  if (req.file) {
+  if (req && req.file) {
     const filePath = path.join(__dirname, "../uploads/", req.file.filename);
     fs.unlink(filePath, (err) => {
       if (err) console.error("⚠️ Gagal hapus file sampah:", err);
-      else console.log("🧹 File sampah berhasil dihapus:", req.file.filename);
     });
   }
 
@@ -19,48 +18,43 @@ const handleSqlError = (error, res, req, actionType = "Action") => {
     if (msg.includes("check_product_name_valid")) {
       return res.status(400).json({
         success: false,
-        message:
-          "Nama produk tidak valid! (Min 5 karakter, harus diawali huruf/angka, simbol diizinkan: - . + &)",
+        message: "Nama produk min 5 huruf & diawali huruf/angka!",
         error_field: "product_name",
       });
     }
+
     if (msg.includes("check_variant_digits")) {
       return res.status(400).json({
         success: false,
-        message: "Varian harus antara 1 sampai 999!",
+        message: "Varian harus 1 - 999 ml!",
         error_field: "variant",
       });
     }
+
     if (
       msg.includes("check_topnotes") ||
       msg.includes("check_middlenotes") ||
       msg.includes("check_basenotes")
     ) {
+      let field = "top_notes";
+      if (msg.includes("middle")) field = "middle_notes";
+      if (msg.includes("base")) field = "base_notes";
+
       return res.status(400).json({
         success: false,
-        message:
-          "Notes tidak valid! (Min 3 karakter, harus diawali huruf, hanya huruf dan koma)",
-        error_field: msg.includes("top")
-          ? "top_notes"
-          : msg.includes("middle")
-          ? "middle_notes"
-          : "base_notes",
+        message: "Notes min 3 huruf & diawali huruf (tanpa simbol aneh)!",
+        error_field: field,
       });
     }
-    if (msg.includes("check_stock")) {
-      return res.status(400).json({
-        success: false,
-        message: "Stok harus antara 0 sampai 99!",
-        error_field: "current_stock",
-      });
-    }
+
     if (msg.includes("check_desc_format")) {
       return res.status(400).json({
         success: false,
-        message: "Deskripsi minimal 10 karakter!",
+        message: "Deskripsi terlalu pendek (min 10 karakter)!",
         error_field: "description",
       });
     }
+
     if (msg.includes("check_price_limit")) {
       return res.status(400).json({
         success: false,
@@ -68,13 +62,22 @@ const handleSqlError = (error, res, req, actionType = "Action") => {
         error_field: "price",
       });
     }
+
+    if (msg.includes("check_stock")) {
+      return res.status(400).json({
+        success: false,
+        message: "Stok tidak cukup atau stok minus!",
+        error_field: "qty",
+      });
+    }
+
     if (
       msg.includes("check_qty_in_limit") ||
       msg.includes("check_qty_out_limit")
     ) {
       return res.status(400).json({
         success: false,
-        message: "Jumlah (Qty) harus antara 1 sampai 99!",
+        message: "Jumlah (Qty) per transaksi maksimal 99 pcs!",
         error_field: "qty",
       });
     }
@@ -83,7 +86,7 @@ const handleSqlError = (error, res, req, actionType = "Action") => {
   if (error.code === "ER_DUP_ENTRY") {
     return res.status(400).json({
       success: false,
-      message: "Produk dengan Nama dan Varian tersebut sudah ada!",
+      message: "Data produk/varian tersebut sudah ada!",
       error_field: "product_name",
     });
   }
