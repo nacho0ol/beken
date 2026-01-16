@@ -1,4 +1,99 @@
 const db = require("../config/db");
+const fs = require("fs");
+const path = require("path");
+
+const handleSqlError = (error, res, req, actionType = "Action") => {
+  console.error(`❌ ERROR ${actionType}:`, error);
+
+  if (req.file) {
+    const filePath = path.join(__dirname, "../uploads/", req.file.filename);
+    fs.unlink(filePath, (err) => {
+      if (err) console.error("⚠️ Gagal hapus file sampah:", err);
+      else console.log("🧹 File sampah berhasil dihapus:", req.file.filename);
+    });
+  }
+
+  if (error.code === "ER_CHECK_CONSTRAINT_VIOLATED") {
+    const msg = error.sqlMessage || "";
+
+    if (msg.includes("check_product_name_valid")) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Nama produk tidak valid! (Min 5 karakter, harus diawali huruf/angka, simbol diizinkan: - . + &)",
+        error_field: "product_name",
+      });
+    }
+    if (msg.includes("check_variant_digits")) {
+      return res.status(400).json({
+        success: false,
+        message: "Varian harus antara 1 sampai 999!",
+        error_field: "variant",
+      });
+    }
+    if (
+      msg.includes("check_topnotes") ||
+      msg.includes("check_middlenotes") ||
+      msg.includes("check_basenotes")
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Notes tidak valid! (Min 3 karakter, harus diawali huruf, hanya huruf dan koma)",
+        error_field: msg.includes("top")
+          ? "top_notes"
+          : msg.includes("middle")
+          ? "middle_notes"
+          : "base_notes",
+      });
+    }
+    if (msg.includes("check_stock")) {
+      return res.status(400).json({
+        success: false,
+        message: "Stok harus antara 0 sampai 99!",
+        error_field: "current_stock",
+      });
+    }
+    if (msg.includes("check_desc_format")) {
+      return res.status(400).json({
+        success: false,
+        message: "Deskripsi minimal 10 karakter!",
+        error_field: "description",
+      });
+    }
+    if (msg.includes("check_price_limit")) {
+      return res.status(400).json({
+        success: false,
+        message: "Harga minimal Rp 30.000!",
+        error_field: "price",
+      });
+    }
+    if (
+      msg.includes("check_qty_in_limit") ||
+      msg.includes("check_qty_out_limit")
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Jumlah (Qty) harus antara 1 sampai 99!",
+        error_field: "qty",
+      });
+    }
+  }
+
+  if (error.code === "ER_DUP_ENTRY") {
+    return res.status(400).json({
+      success: false,
+      message: "Produk dengan Nama dan Varian tersebut sudah ada!",
+      error_field: "product_name",
+    });
+  }
+
+  return res.status(500).json({
+    success: false,
+    message: `Gagal ${actionType}`,
+    error: error.message,
+  });
+};
 
 const getAllProducts = async (req, res) => {
   try {
@@ -40,9 +135,10 @@ const createProduct = async (req, res) => {
     !base_notes ||
     !description
   ) {
+    if (req.file) fs.unlinkSync(req.file.path);
     return res.status(400).json({
       success: false,
-      message: "Semua kolom (termasuk Notes & Deskripsi) wajib diisi!",
+      message: "Semua kolom wajib diisi!",
     });
   }
 
@@ -51,16 +147,36 @@ const createProduct = async (req, res) => {
     current_stock === "" ||
     current_stock === null
   ) {
+    if (req.file) fs.unlinkSync(req.file.path);
     return res.status(400).json({
       success: false,
       message: "Stok awal wajib diisi (minimal 0)!",
+      error_field: "current_stock",
     });
   }
 
-  if (isNaN(price) || isNaN(variant) || isNaN(current_stock)) {
+  if (isNaN(price)) {
+    if (req.file) fs.unlinkSync(req.file.path);
     return res.status(400).json({
       success: false,
-      message: "Harga, Varian, dan Stok harus berupa angka!",
+      message: "Harga harus angka!",
+      error_field: "price",
+    });
+  }
+  if (isNaN(variant)) {
+    if (req.file) fs.unlinkSync(req.file.path);
+    return res.status(400).json({
+      success: false,
+      message: "Varian harus angka!",
+      error_field: "variant",
+    });
+  }
+  if (isNaN(current_stock)) {
+    if (req.file) fs.unlinkSync(req.file.path);
+    return res.status(400).json({
+      success: false,
+      message: "Stok harus angka!",
+      error_field: "current_stock",
     });
   }
 
@@ -68,7 +184,6 @@ const createProduct = async (req, res) => {
 
   try {
     const query = `CALL sp_AddNewProduct(?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-
     const values = [
       product_name,
       variant,
@@ -88,12 +203,7 @@ const createProduct = async (req, res) => {
       message: "Produk Berhasil Ditambahkan",
     });
   } catch (error) {
-    console.error("❌ ERROR SP CREATE:", error);
-    res.status(500).json({
-      success: false,
-      message: "Gagal Menambah Produk",
-      error: error.message,
-    });
+    return handleSqlError(error, res, req, "Menambah Produk");
   }
 };
 
@@ -110,6 +220,29 @@ const updateProduct = async (req, res) => {
     current_stock,
     img_path: old_img_path,
   } = req.body;
+
+  if (
+    !product_name ||
+    !variant ||
+    !price ||
+    !top_notes ||
+    !middle_notes ||
+    !base_notes ||
+    !description
+  ) {
+    if (req.file) fs.unlinkSync(req.file.path);
+    return res
+      .status(400)
+      .json({ success: false, message: "Data tidak boleh ada yang kosong!" });
+  }
+
+  if (isNaN(price) || isNaN(variant) || isNaN(current_stock)) {
+    if (req.file) fs.unlinkSync(req.file.path);
+    return res.status(400).json({
+      success: false,
+      message: "Harga, Varian, dan Stok harus angka!",
+    });
+  }
 
   const final_img_path = req.file
     ? req.file.filename
@@ -137,6 +270,7 @@ const updateProduct = async (req, res) => {
     const [result] = await db.execute(query, values);
 
     if (result.affectedRows === 0) {
+      if (req.file) fs.unlinkSync(req.file.path); // Hapus foto baru kalo ID gak ketemu
       return res
         .status(404)
         .json({ success: false, message: "Produk tidak ditemukan" });
@@ -144,8 +278,7 @@ const updateProduct = async (req, res) => {
 
     res.status(200).json({ success: true, message: "Update Berhasil!" });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, message: error.message });
+    return handleSqlError(error, res, req, "Update Produk");
   }
 };
 
@@ -198,30 +331,43 @@ const getProductById = async (req, res) => {
 const restockProduct = async (req, res) => {
   const { product_id, user_id, qty } = req.body;
 
-  if (!user_id) {
+  if (!user_id || !product_id) {
     return res
       .status(400)
-      .json({ success: false, message: "User ID wajib ada!" });
+      .json({ success: false, message: "User ID & Product ID wajib ada!" });
+  }
+
+  if (!qty || isNaN(qty)) {
+    return res.status(400).json({
+      success: false,
+      message: "Jumlah (Qty) wajib diisi angka!",
+      error_field: "qty",
+    });
   }
 
   try {
     await db.query("CALL sp_restock(?, ?, ?)", [product_id, user_id, qty]);
     res.status(200).json({ success: true, message: "Restock Berhasil" });
   } catch (error) {
-    console.error("❌ ERROR RESTOCK:", error);
-    res
-      .status(500)
-      .json({ success: false, message: "Gagal Restock", error: error.message });
+    return handleSqlError(error, res, req, "Restock");
   }
 };
 
 const stockOutProduct = async (req, res) => {
   const { product_id, user_id, qty, reason } = req.body;
 
-  if (!user_id) {
+  if (!user_id || !product_id) {
     return res
       .status(400)
-      .json({ success: false, message: "User ID wajib ada!" });
+      .json({ success: false, message: "User ID & Product ID wajib ada!" });
+  }
+
+  if (!qty || isNaN(qty)) {
+    return res.status(400).json({
+      success: false,
+      message: "Jumlah (Qty) wajib diisi angka!",
+      error_field: "qty",
+    });
   }
 
   try {
@@ -233,50 +379,26 @@ const stockOutProduct = async (req, res) => {
     ]);
     res.status(200).json({ success: true, message: "Stok Keluar Berhasil" });
   } catch (error) {
-    console.error("❌ ERROR STOCK OUT:", error);
-    res.status(500).json({
-      success: false,
-      message: "Gagal Stock Out",
-      error: error.message,
-    });
+    return handleSqlError(error, res, req, "Stock Out");
   }
 };
 
 const getHistoryLog = async (req, res) => {
   try {
     const query = `
-        SELECT 
-            'Masuk' AS type,
-            p.product_name,
-            u.username,
-            s.qty,
-            s.date
-        FROM Stock_In_Log s
-        JOIN Products p ON s.product_id = p.product_id
-        LEFT JOIN Users u ON s.user_id = u.user_id
-
+        SELECT 'Masuk' AS type, p.product_name, u.username, s.qty, s.date
+        FROM Stock_In_Log s JOIN Products p ON s.product_id = p.product_id LEFT JOIN Users u ON s.user_id = u.user_id
         UNION ALL
-
-        SELECT 
-            'Keluar' AS type,
-            p.product_name,
-            u.username,
-            s.qty,
-            s.date
-        FROM Stock_Out_Log s
-        JOIN Products p ON s.product_id = p.product_id
-        LEFT JOIN Users u ON s.user_id = u.user_id
-
+        SELECT 'Keluar' AS type, p.product_name, u.username, s.qty, s.date
+        FROM Stock_Out_Log s JOIN Products p ON s.product_id = p.product_id LEFT JOIN Users u ON s.user_id = u.user_id
         ORDER BY date DESC
     `;
 
     const [rows] = await db.query(query);
 
-    res.status(200).json({
-      success: true,
-      message: "Data History Log",
-      data: rows,
-    });
+    res
+      .status(200)
+      .json({ success: true, message: "Data History Log", data: rows });
   } catch (error) {
     console.error("❌ ERROR HISTORY:", error);
     res.status(500).json({
